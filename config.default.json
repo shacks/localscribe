@@ -1,0 +1,12 @@
+{
+  "whisper_model": "small.en",
+  "whisper_compute_type": "int8",
+  "ollama_url": "http://localhost:11434",
+  "ollama_model": "gemma3:4b",
+  "llm_audit": true,
+  "delete_audio_after_success": true,
+  "output_dir": "~/Documents/LocalScribe/Transcripts",
+  "audio_dir": "~/Documents/LocalScribe/Audio",
+  "open_for_review": true,
+  "sample_rate": 16000
+}
