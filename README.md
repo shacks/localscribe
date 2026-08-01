@@ -56,8 +56,8 @@ run):
 | `whisper_model` | `small.en` | Set `medium.en` for better accuracy, ~2-3x slower on this CPU |
 | `ollama_model` | `gemma3:4b` | LLM audit model |
 | `llm_audit` | `true` | Set `false` to skip pass 2 (output is flagged accordingly) |
-| `delete_audio_after_success` | `true` | Keep `true` unless debugging |
-| `output_dir` | `~/Documents/LocalScribe/Transcripts` | Keep OUT of OneDrive sync |
+| `delete_audio_after_success` | `true` | Also a checkbox in the app's Settings panel |
+| `output_dir` | `~/Documents/LocalScribe/Transcripts` | Also changeable in-app ("Change..."). Keep OUT of OneDrive sync |
 | `open_for_review` | `true` | Opens each transcript in Notepad when ready |
 
 ## Privacy and professional obligations (Ontario / PHIPA)

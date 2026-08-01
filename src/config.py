@@ -22,3 +22,7 @@ def load() -> dict:
     Path(cfg["output_dir"]).mkdir(parents=True, exist_ok=True)
     Path(cfg["audio_dir"]).mkdir(parents=True, exist_ok=True)
     return cfg
+
+
+def save(cfg: dict):
+    USER_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")

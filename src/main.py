@@ -10,9 +10,9 @@ import threading
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
 
-from . import config, pipeline
+from . import __version__, config, pipeline
 from .recorder import Recorder
 
 
@@ -24,8 +24,8 @@ class App:
         self.started_at = None
 
         self.root = tk.Tk()
-        self.root.title("LocalScribe")
-        self.root.geometry("420x380")
+        self.root.title(f"LocalScribe v{__version__}")
+        self.root.geometry("460x500")
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.button = tk.Button(
@@ -44,9 +44,42 @@ class App:
         self.listbox.bind("<Double-Button-1>", self.open_selected)
 
         tk.Button(self.root, text="Open transcripts folder",
-                  command=lambda: os.startfile(self.cfg["output_dir"])).pack(pady=(0, 12))
+                  command=lambda: os.startfile(self.cfg["output_dir"])).pack(pady=(0, 8))
+
+        settings = tk.LabelFrame(self.root, text="Settings", font=("Segoe UI", 9))
+        settings.pack(fill="x", padx=16, pady=(0, 12))
+
+        self.delete_audio_var = tk.BooleanVar(value=self.cfg["delete_audio_after_success"])
+        tk.Checkbutton(
+            settings, text="Delete audio after successful transcript",
+            variable=self.delete_audio_var, font=("Segoe UI", 9),
+            command=self.save_settings,
+        ).pack(anchor="w", padx=8, pady=(4, 0))
+
+        row = tk.Frame(settings)
+        row.pack(fill="x", padx=8, pady=(2, 8))
+        tk.Label(row, text="Save transcripts to:", font=("Segoe UI", 9)).pack(side="left")
+        self.outdir_var = tk.StringVar(value=self.cfg["output_dir"])
+        tk.Label(row, textvariable=self.outdir_var, font=("Segoe UI", 8),
+                 fg="#555", anchor="w").pack(side="left", fill="x", expand=True, padx=6)
+        tk.Button(row, text="Change...", command=self.choose_output_dir).pack(side="right")
 
         threading.Thread(target=self.worker, daemon=True).start()
+
+    def save_settings(self):
+        self.cfg["delete_audio_after_success"] = self.delete_audio_var.get()
+        config.save(self.cfg)
+
+    def choose_output_dir(self):
+        chosen = filedialog.askdirectory(
+            initialdir=self.cfg["output_dir"], title="Choose transcripts folder"
+        )
+        if not chosen:
+            return
+        self.cfg["output_dir"] = chosen
+        Path(chosen).mkdir(parents=True, exist_ok=True)
+        self.outdir_var.set(chosen)
+        config.save(self.cfg)
 
     def toggle(self):
         if not self.recorder.recording:
