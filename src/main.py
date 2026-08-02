@@ -25,14 +25,23 @@ class App:
 
         self.root = tk.Tk()
         self.root.title(f"LocalScribe v{__version__}")
-        self.root.geometry("460x500")
+        self.root.geometry("460x530")
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.button = tk.Button(
             self.root, text="Start Recording", font=("Segoe UI", 18, "bold"),
             bg="#2e7d32", fg="white", height=3, command=self.toggle,
         )
-        self.button.pack(fill="x", padx=16, pady=16)
+        self.button.pack(fill="x", padx=16, pady=(16, 8))
+
+        # live recording indicator: blinking REC + elapsed time + mic level meter
+        meter_row = tk.Frame(self.root)
+        meter_row.pack(fill="x", padx=16, pady=(0, 8))
+        self.rec_var = tk.StringVar(value="")
+        tk.Label(meter_row, textvariable=self.rec_var, font=("Consolas", 12, "bold"),
+                 fg="#c62828", width=9, anchor="w").pack(side="left")
+        self.meter = tk.Canvas(meter_row, height=16, bg="#e0e0e0", highlightthickness=0)
+        self.meter.pack(side="left", fill="x", expand=True)
 
         self.status = tk.StringVar(value="Ready")
         tk.Label(self.root, textvariable=self.status, font=("Segoe UI", 10)).pack(pady=(0, 8))
@@ -90,13 +99,44 @@ class App:
             except Exception as e:
                 messagebox.showerror("Microphone error", str(e))
                 return
-            self.button.config(text="Stop Recording", bg="#c62828")
-            self.status.set("Recording...")
+            # while recording the button goes small and discreet; the meter is the focus
+            self.button.config(text="Stop recording", font=("Segoe UI", 10),
+                               height=1, bg="#f2f2f2", fg="#c62828",
+                               activebackground="#e0e0e0", activeforeground="#c62828")
+            self.status.set("Recording")
+            self._tick_n = 0
+            self._blink = False
+            self._disp_level = 0.0
+            self._meter_tick()
         else:
             wav = self.recorder.stop()
             self.jobs.put((wav, self.started_at))
-            self.button.config(text="Start Recording", bg="#2e7d32")
+            self.button.config(text="Start Recording", font=("Segoe UI", 18, "bold"),
+                               height=3, bg="#2e7d32", fg="white",
+                               activebackground="#1b5e20", activeforeground="white")
+            self.rec_var.set("")
+            self.meter.delete("all")
             self.status.set("Queued for transcription")
+
+    def _meter_tick(self):
+        if not self.recorder.recording:
+            return
+        # peak with decay so the bar falls smoothly; sqrt scaling for visibility
+        self._disp_level = max(self.recorder.level, self._disp_level * 0.75)
+        width = max(self.meter.winfo_width(), 1)
+        frac = min(1.0, self._disp_level ** 0.5)
+        color = "#2e7d32" if self._disp_level < 0.6 else (
+            "#f9a825" if self._disp_level < 0.9 else "#c62828")
+        self.meter.delete("all")
+        self.meter.create_rectangle(0, 0, int(width * frac), 16, fill=color, width=0)
+
+        self._tick_n += 1
+        if self._tick_n % 6 == 0:  # blink REC dot about twice a second
+            self._blink = not self._blink
+        elapsed = int((datetime.now() - self.started_at).total_seconds())
+        mins, secs = divmod(elapsed, 60)
+        self.rec_var.set(f"{'●' if self._blink else ' '} {mins:02d}:{secs:02d}")
+        self.root.after(80, self._meter_tick)
 
     def worker(self):
         while True:

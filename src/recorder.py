@@ -2,6 +2,7 @@
 import queue
 import threading
 
+import numpy as np
 import sounddevice as sd
 import soundfile as sf
 
@@ -14,6 +15,7 @@ class Recorder:
         self._q = None
         self._stop_flag = None
         self.path = None
+        self.level = 0.0  # latest mic peak (0.0-1.0), polled by the GUI meter
 
     @property
     def recording(self) -> bool:
@@ -27,6 +29,7 @@ class Recorder:
         self._stop_flag = threading.Event()
 
         def callback(indata, frames, time_info, status):
+            self.level = float(np.abs(indata).max()) / 32768.0
             self._q.put(indata.copy())
 
         self._stream = sd.InputStream(
@@ -55,4 +58,5 @@ class Recorder:
         self._stop_flag.set()
         self._writer.join(timeout=10)
         self._writer = None
+        self.level = 0.0
         return self.path
