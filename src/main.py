@@ -1,4 +1,4 @@
-"""LocalScribe GUI: one big Start/Stop button, background processing queue.
+"""LocalScribe GUI: one button, background processing queue, quiet flat styling.
 
 Recording is instant; transcription + redaction happen in a worker thread so
 the next consult can be recorded while the previous one processes.
@@ -15,6 +15,21 @@ from tkinter import filedialog, messagebox
 from . import __version__, config, pipeline
 from .recorder import Recorder
 
+BG = "#fafafa"
+TEXT = "#212121"
+MUTED = "#8a8a8a"
+GREEN = "#2e7d32"
+GREEN_DARK = "#1b5e20"
+RED = "#b71c1c"
+RED_TINT = "#fdecea"
+METER_BG = "#ececec"
+FONT = "Segoe UI"
+
+
+def flat(btn: tk.Button, **kw):
+    btn.config(relief="flat", bd=0, cursor="hand2", **kw)
+    return btn
+
 
 class App:
     def __init__(self):
@@ -22,58 +37,93 @@ class App:
         self.recorder = Recorder(self.cfg["sample_rate"])
         self.jobs = queue.Queue()
         self.started_at = None
+        self.settings_open = False
 
         self.root = tk.Tk()
-        self.root.title(f"LocalScribe v{__version__}")
-        self.root.geometry("460x530")
+        self.root.title("LocalScribe")
+        self.root.geometry("400x520")
+        self.root.minsize(360, 440)
+        self.root.configure(bg=BG)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
-        self.button = tk.Button(
-            self.root, text="Start Recording", font=("Segoe UI", 18, "bold"),
-            bg="#2e7d32", fg="white", height=3, command=self.toggle,
-        )
-        self.button.pack(fill="x", padx=16, pady=(16, 8))
+        # header
+        header = tk.Frame(self.root, bg=BG)
+        header.pack(fill="x", padx=20, pady=(16, 10))
+        tk.Label(header, text="LocalScribe", font=(FONT, 13, "bold"),
+                 bg=BG, fg=TEXT).pack(side="left")
+        tk.Label(header, text=f"v{__version__}", font=(FONT, 9),
+                 bg=BG, fg=MUTED).pack(side="right")
 
-        # live recording indicator: blinking REC + elapsed time + mic level meter
-        meter_row = tk.Frame(self.root)
-        meter_row.pack(fill="x", padx=16, pady=(0, 8))
+        # main control
+        self.button = flat(
+            tk.Button(self.root, command=self.toggle),
+            text="●  Start recording", font=(FONT, 13, "bold"),
+            bg=GREEN, fg="white", activebackground=GREEN_DARK,
+            activeforeground="white", pady=14,
+        )
+        self.button.pack(fill="x", padx=20)
+
+        # recording row (hidden unless recording): blinking timer + level meter
+        self.rec_row = tk.Frame(self.root, bg=BG)
         self.rec_var = tk.StringVar(value="")
-        tk.Label(meter_row, textvariable=self.rec_var, font=("Consolas", 12, "bold"),
-                 fg="#c62828", width=9, anchor="w").pack(side="left")
-        self.meter = tk.Canvas(meter_row, height=16, bg="#e0e0e0", highlightthickness=0)
-        self.meter.pack(side="left", fill="x", expand=True)
+        tk.Label(self.rec_row, textvariable=self.rec_var, font=("Consolas", 11, "bold"),
+                 bg=BG, fg=RED, width=9, anchor="w").pack(side="left")
+        self.meter = tk.Canvas(self.rec_row, height=8, bg=METER_BG, highlightthickness=0)
+        self.meter.pack(side="left", fill="x", expand=True, pady=2)
 
         self.status = tk.StringVar(value="Ready")
-        tk.Label(self.root, textvariable=self.status, font=("Segoe UI", 10)).pack(pady=(0, 8))
+        tk.Label(self.root, textvariable=self.status, font=(FONT, 9),
+                 bg=BG, fg=MUTED, anchor="w").pack(fill="x", padx=20, pady=(8, 12))
 
-        tk.Label(self.root, text="Finished transcripts (double-click to open):",
-                 font=("Segoe UI", 9)).pack(anchor="w", padx=16)
-        self.listbox = tk.Listbox(self.root, font=("Segoe UI", 9))
-        self.listbox.pack(fill="both", expand=True, padx=16, pady=(2, 8))
+        # transcript list
+        tk.Label(self.root, text="RECENT TRANSCRIPTS", font=(FONT, 8, "bold"),
+                 bg=BG, fg=MUTED, anchor="w").pack(fill="x", padx=20)
+        self.listbox = tk.Listbox(
+            self.root, font=(FONT, 9), bd=0, highlightthickness=0,
+            bg="white", fg=TEXT, selectbackground="#e3f2fd",
+            selectforeground=TEXT, activestyle="none",
+        )
+        self.listbox.pack(fill="both", expand=True, padx=20, pady=(4, 10))
         self.listbox.bind("<Double-Button-1>", self.open_selected)
 
-        tk.Button(self.root, text="Open transcripts folder",
-                  command=lambda: os.startfile(self.cfg["output_dir"])).pack(pady=(0, 8))
+        # footer buttons
+        self.btn_row = tk.Frame(self.root, bg=BG)
+        self.btn_row.pack(fill="x", padx=20, pady=(0, 14))
+        flat(tk.Button(self.btn_row, text="Open folder", font=(FONT, 9),
+                       bg=BG, fg=MUTED, activebackground=BG, activeforeground=TEXT,
+                       command=lambda: os.startfile(self.cfg["output_dir"]))
+             ).pack(side="left")
+        flat(tk.Button(self.btn_row, text="Settings", font=(FONT, 9),
+                       bg=BG, fg=MUTED, activebackground=BG, activeforeground=TEXT,
+                       command=self.toggle_settings)).pack(side="right")
 
-        settings = tk.LabelFrame(self.root, text="Settings", font=("Segoe UI", 9))
-        settings.pack(fill="x", padx=16, pady=(0, 12))
-
+        # settings panel (hidden by default)
+        self.settings = tk.Frame(self.root, bg="white")
         self.delete_audio_var = tk.BooleanVar(value=self.cfg["delete_audio_after_success"])
         tk.Checkbutton(
-            settings, text="Delete audio after successful transcript",
-            variable=self.delete_audio_var, font=("Segoe UI", 9),
-            command=self.save_settings,
-        ).pack(anchor="w", padx=8, pady=(4, 0))
-
-        row = tk.Frame(settings)
-        row.pack(fill="x", padx=8, pady=(2, 8))
-        tk.Label(row, text="Save transcripts to:", font=("Segoe UI", 9)).pack(side="left")
+            self.settings, text="Delete audio after successful transcript",
+            variable=self.delete_audio_var, font=(FONT, 9), bg="white", fg=TEXT,
+            activebackground="white", command=self.save_settings,
+        ).pack(anchor="w", padx=10, pady=(8, 2))
+        row = tk.Frame(self.settings, bg="white")
+        row.pack(fill="x", padx=10, pady=(0, 10))
+        tk.Label(row, text="Save to:", font=(FONT, 9), bg="white", fg=TEXT).pack(side="left")
         self.outdir_var = tk.StringVar(value=self.cfg["output_dir"])
-        tk.Label(row, textvariable=self.outdir_var, font=("Segoe UI", 8),
-                 fg="#555", anchor="w").pack(side="left", fill="x", expand=True, padx=6)
-        tk.Button(row, text="Change...", command=self.choose_output_dir).pack(side="right")
+        tk.Label(row, textvariable=self.outdir_var, font=(FONT, 8), bg="white",
+                 fg=MUTED, anchor="w").pack(side="left", fill="x", expand=True, padx=6)
+        flat(tk.Button(row, text="Change", font=(FONT, 9), bg="#eeeeee", fg=TEXT,
+                       activebackground="#e0e0e0", padx=8,
+                       command=self.choose_output_dir)).pack(side="right")
 
         threading.Thread(target=self.worker, daemon=True).start()
+
+    # -- settings --------------------------------------------------------
+    def toggle_settings(self):
+        if self.settings_open:
+            self.settings.pack_forget()
+        else:
+            self.settings.pack(fill="x", padx=20, pady=(0, 14), after=self.btn_row)
+        self.settings_open = not self.settings_open
 
     def save_settings(self):
         self.cfg["delete_audio_after_success"] = self.delete_audio_var.get()
@@ -90,6 +140,7 @@ class App:
         self.outdir_var.set(chosen)
         config.save(self.cfg)
 
+    # -- recording -------------------------------------------------------
     def toggle(self):
         if not self.recorder.recording:
             self.started_at = datetime.now()
@@ -99,10 +150,11 @@ class App:
             except Exception as e:
                 messagebox.showerror("Microphone error", str(e))
                 return
-            # while recording the button goes small and discreet; the meter is the focus
-            self.button.config(text="Stop recording", font=("Segoe UI", 10),
-                               height=1, bg="#f2f2f2", fg="#c62828",
-                               activebackground="#e0e0e0", activeforeground="#c62828")
+            # discreet while recording: small neutral stop, meter carries the signal
+            self.button.config(text="Stop recording", font=(FONT, 10),
+                               bg=RED_TINT, fg=RED, activebackground="#f7d9d5",
+                               activeforeground=RED, pady=6)
+            self.rec_row.pack(fill="x", padx=20, pady=(8, 0), after=self.button)
             self.status.set("Recording")
             self._tick_n = 0
             self._blink = False
@@ -111,11 +163,10 @@ class App:
         else:
             wav = self.recorder.stop()
             self.jobs.put((wav, self.started_at))
-            self.button.config(text="Start Recording", font=("Segoe UI", 18, "bold"),
-                               height=3, bg="#2e7d32", fg="white",
-                               activebackground="#1b5e20", activeforeground="white")
-            self.rec_var.set("")
-            self.meter.delete("all")
+            self.button.config(text="●  Start recording", font=(FONT, 13, "bold"),
+                               bg=GREEN, fg="white", activebackground=GREEN_DARK,
+                               activeforeground="white", pady=14)
+            self.rec_row.pack_forget()
             self.status.set("Queued for transcription")
 
     def _meter_tick(self):
@@ -125,10 +176,10 @@ class App:
         self._disp_level = max(self.recorder.level, self._disp_level * 0.75)
         width = max(self.meter.winfo_width(), 1)
         frac = min(1.0, self._disp_level ** 0.5)
-        color = "#2e7d32" if self._disp_level < 0.6 else (
-            "#f9a825" if self._disp_level < 0.9 else "#c62828")
+        color = GREEN if self._disp_level < 0.6 else (
+            "#f9a825" if self._disp_level < 0.9 else RED)
         self.meter.delete("all")
-        self.meter.create_rectangle(0, 0, int(width * frac), 16, fill=color, width=0)
+        self.meter.create_rectangle(0, 0, int(width * frac), 8, fill=color, width=0)
 
         self._tick_n += 1
         if self._tick_n % 6 == 0:  # blink REC dot about twice a second
@@ -138,6 +189,7 @@ class App:
         self.rec_var.set(f"{'●' if self._blink else ' '} {mins:02d}:{secs:02d}")
         self.root.after(80, self._meter_tick)
 
+    # -- pipeline --------------------------------------------------------
     def worker(self):
         while True:
             wav, started_at = self.jobs.get()
